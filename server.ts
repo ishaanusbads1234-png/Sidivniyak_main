@@ -128,7 +128,7 @@ Return the output strictly in the following JSON structure:
 
     // Call Gemini API server-side
     const geminiResponse = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+     model: "gemini-2.0-flash",
       contents: contentPayload,
       config: {
         responseMimeType: "application/json"
