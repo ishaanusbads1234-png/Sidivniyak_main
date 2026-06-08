@@ -1,0 +1,6 @@
+{
+  "name": "Sidivniyak Beauty & Cosmetics Store",
+  "description": "Indian retail cosmetics in-store register, automatic vendor bill parser, and secure ledger database console.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

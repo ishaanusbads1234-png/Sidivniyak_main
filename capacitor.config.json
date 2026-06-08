@@ -1,0 +1,9 @@
+{
+  "appId": "com.sidivniyak.store",
+  "appName": "SIDIVNIYAK",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  }
+}

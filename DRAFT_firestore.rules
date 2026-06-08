@@ -1,0 +1,139 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return isSignedIn() && (request.auth.token.email_verified == true || request.auth.token.firebase.sign_in_provider == 'google.com');
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Collections Validations
+    function isValidItem(data) {
+      return data.keys().hasAll(['id', 'sku', 'name', 'category']) 
+        && data.id is string && data.id.size() <= 100
+        && data.sku is string && data.sku.size() <= 50
+        && data.name is string && data.name.size() <= 200
+        && data.category is string && (data.category in ['Face', 'Eyes', 'Hair', 'Skin', 'Nails', 'Other']);
+    }
+
+    function isValidSale(data) {
+      return data.keys().hasAll(['id', 'invoiceNumber', 'saleDate', 'items', 'grandTotal'])
+        && data.id is string
+        && data.invoiceNumber is string
+        && data.items is list
+        && data.grandTotal is number;
+    }
+
+    function isValidPurchase(data) {
+      return data.keys().hasAll(['id', 'invoiceNumber', 'supplierId', 'purchaseDate', 'items'])
+        && data.id is string
+        && data.invoiceNumber is string
+        && data.items is list;
+    }
+
+    function isValidSupplier(data) {
+      return data.keys().hasAll(['id', 'name'])
+        && data.id is string
+        && data.name is string;
+    }
+
+    function isValidReturn(data) {
+      return data.keys().hasAll(['id', 'type', 'invoiceNumber', 'itemId', 'quantity', 'action'])
+        && data.id is string
+        && data.type is string
+        && data.action is string;
+    }
+
+    function isValidExpense(data) {
+      return data.keys().hasAll(['id', 'description', 'amount', 'category', 'date'])
+        && data.id is string
+        && data.description is string && data.description.size() <= 500
+        && data.amount is number
+        && data.category is string;
+    }
+
+    function isValidAuditLog(data) {
+      return data.keys().hasAll(['id', 'timestamp', 'action', 'user'])
+        && data.id is string
+        && data.action is string;
+    }
+
+    // 1. ITEMS CATALOGUE RULES
+    match /items/{itemId} {
+      allow read: if isSignedIn();
+      allow create: if isEmailVerified() && isValidId(itemId) && isValidItem(incoming());
+      allow update: if isEmailVerified() && isValidId(itemId) && isValidItem(incoming());
+      allow delete: if isEmailVerified() && isValidId(itemId);
+    }
+
+    // 2. SALES INVOICES RULES
+    match /sales/{saleId} {
+      allow read: if isSignedIn();
+      allow create: if isEmailVerified() && isValidId(saleId) && isValidSale(incoming());
+      allow update: if isEmailVerified() && isValidId(saleId) && isValidSale(incoming())
+        && (incoming().diff(existing()).affectedKeys().hasOnly(['isCancelled', 'cancelledAt', 'cancelledBy']) || incoming().grandTotal == existing().grandTotal);
+      allow delete: if false; // Invoices are fully immutable
+    }
+
+    // 3. PURCHASES INVOICES RULES
+    match /purchases/{purchaseId} {
+      allow read: if isSignedIn();
+      allow create: if isEmailVerified() && isValidId(purchaseId) && isValidPurchase(incoming());
+      allow update: if isEmailVerified() && isValidId(purchaseId) && isValidPurchase(incoming());
+      allow delete: if false;
+    }
+
+    // 4. SUPPLIER DIRECTORY RULES
+    match /suppliers/{supplierId} {
+      allow read: if isSignedIn();
+      allow create: if isEmailVerified() && isValidId(supplierId) && isValidSupplier(incoming());
+      allow update: if isEmailVerified() && isValidId(supplierId) && isValidSupplier(incoming());
+      allow delete: if isEmailVerified() && isValidId(supplierId);
+    }
+
+    // 5. RETURNS LOG RULES
+    match /returns/{returnId} {
+      allow read: if isSignedIn();
+      allow create: if isEmailVerified() && isValidId(returnId) && isValidReturn(incoming());
+      allow update: if isEmailVerified() && isValidId(returnId) && isValidReturn(incoming());
+      allow delete: if false;
+    }
+
+    // 6. OPERATING EXPENSES RULES
+    match /expenses/{expenseId} {
+      allow read: if isSignedIn();
+      allow create: if isEmailVerified() && isValidId(expenseId) && isValidExpense(incoming());
+      allow update: if isEmailVerified() && isValidId(expenseId) && isValidExpense(incoming());
+      allow delete: if isEmailVerified() && isValidId(expenseId);
+    }
+
+    // 7. SECURITY AUDIT LOGS RULES
+    match /auditLogs/{logId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(logId) && isValidAuditLog(incoming());
+      allow update, delete: if false; // Logs are fully immutable (write-once, append-only)
+    }
+
+  }
+}

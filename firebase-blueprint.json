@@ -1,0 +1,136 @@
+{
+  "entities": {
+    "InventoryItem": {
+      "title": "InventoryItem",
+      "description": "Store beauty product category and pricing catalog",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique product ID" },
+        "sku": { "type": "string", "description": "Unique shop keepers stock keeping unit code" },
+        "name": { "type": "string", "description": "Product display name" },
+        "category": { "type": "string", "enum": ["Face", "Eyes", "Hair", "Skin", "Nails", "Other"] },
+        "description": { "type": "string", "description": "Formula details or instructions" },
+        "lowStockThreshold": { "type": "integer", "description": "Safety indicator alert limit" },
+        "initialStock": { "type": "integer", "description": "Factory default database counts" },
+        "unit": { "type": "string", "description": "UOM like pcs, box" },
+        "location": { "type": "string", "description": "Cabinet drawer location mapping" },
+        "costPrice": { "type": "integer", "description": "Purchase cost per unit in INR" }
+      },
+      "required": ["id", "sku", "name", "category"]
+    },
+    "Sale": {
+      "title": "Sale",
+      "description": "GST retail beauty billing transaction invoice records",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "invoiceNumber": { "type": "string" },
+        "customerName": { "type": "string" },
+        "customerGstin": { "type": "string" },
+        "saleDate": { "type": "string", "format": "date" },
+        "items": { "type": "array" },
+        "subtotal": { "type": "number" },
+        "cgst": { "type": "number" },
+        "sgst": { "type": "number" },
+        "igst": { "type": "number" },
+        "discount": { "type": "number" },
+        "grandTotal": { "type": "number" },
+        "isCancelled": { "type": "boolean" },
+        "cancelledAt": { "type": "string" },
+        "operator": { "type": "string" }
+      },
+      "required": ["id", "invoiceNumber", "saleDate", "items", "grandTotal"]
+    },
+    "Purchase": {
+      "title": "Purchase",
+      "description": "Supplier purchase ledger stock insertions",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "invoiceNumber": { "type": "string" },
+        "supplierId": { "type": "string" },
+        "supplierName": { "type": "string" },
+        "purchaseDate": { "type": "string", "format": "date" },
+        "items": { "type": "array" },
+        "subtotal": { "type": "number" },
+        "gstAmount": { "type": "number" },
+        "grandTotal": { "type": "number" },
+        "operator": { "type": "string" }
+      },
+      "required": ["id", "invoiceNumber", "supplierId", "purchaseDate", "items"]
+    },
+    "Supplier": {
+      "title": "Supplier",
+      "description": "Wholesale vendor account directories",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "contactName": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "gstin": { "type": "string" },
+        "address": { "type": "string" }
+      },
+      "required": ["id", "name"]
+    },
+    "Return": {
+      "title": "Return",
+      "description": "Sales and purchases returns logs with ledger re-alignments",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["SALES_RETURN", "PURCHASE_RETURN"] },
+        "invoiceNumber": { "type": "string" },
+        "itemId": { "type": "string" },
+        "sku": { "type": "string" },
+        "name": { "type": "string" },
+        "quantity": { "type": "integer" },
+        "amount": { "type": "number" },
+        "date": { "type": "string", "format": "date" },
+        "reason": { "type": "string" },
+        "action": { "type": "string", "enum": ["Refund", "Exchange"] },
+        "operator": { "type": "string" }
+      },
+      "required": ["id", "type", "invoiceNumber", "itemId", "quantity", "action"]
+    },
+    "Expense": {
+      "title": "Expense",
+      "description": "Shop operating expenses registry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "description": { "type": "string" },
+        "amount": { "type": "number" },
+        "category": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "operator": { "type": "string" }
+      },
+      "required": ["id", "description", "amount", "category", "date"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Immutable security operations logs",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "action": { "type": "string" },
+        "user": { "type": "string" },
+        "previousValues": { "type": "string" },
+        "newValues": { "type": "string" },
+        "deviceInfo": { "type": "string" }
+      },
+      "required": ["id", "timestamp", "action", "user"]
+    }
+  },
+  "firestore": {
+    "items": { "schema": "InventoryItem", "description": "Master cosmetic catalogs" },
+    "sales": { "schema": "Sale", "description": "GST sales invoices" },
+    "purchases": { "schema": "Purchase", "description": "Incoming wholesale invoices" },
+    "suppliers": { "schema": "Supplier", "description": "Supplier directories" },
+    "returns": { "schema": "Return", "description": "Sales and purchase return registers" },
+    "expenses": { "schema": "Expense", "description": "Outflow operating costs" },
+    "auditLogs": { "schema": "AuditLog", "description": "Security trace logs" }
+  }
+}
