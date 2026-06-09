@@ -1172,6 +1172,7 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         updateSupplier,
         deleteSupplier,
         addReturn,
+        addAuditLog,
         exportDatabaseBackup,
         importDatabaseBackup
       }}

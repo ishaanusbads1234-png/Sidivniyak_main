@@ -6,7 +6,8 @@
 import React, { useState } from "react";
 import { useInventory } from "../context/InventoryContext";
 import { Sale, SaleItem } from "../types";
-import { Plus, Trash, Printer, AlertTriangle, Check, X } from "lucide-react";
+import { Plus, Trash, Printer, AlertTriangle, Check, X, Download, Share2, Send, Mail } from "lucide-react";
+import { jsPDF } from "jspdf";
 
 export const SalesManager: React.FC = () => {
   const { items, sales, addSale, cancelSale, calculateStock } = useInventory();
@@ -24,6 +25,397 @@ export const SalesManager: React.FC = () => {
 
   const [feedback, setFeedback] = useState("");
   const [activeInvoice, setActiveInvoice] = useState<Sale | null>(null);
+
+  // PDF Document Generation Helper
+  const generatePdf = (bill: any) => {
+    const doc = new jsPDF({
+      orientation: "portrait",
+      unit: "mm",
+      format: "a4"
+    });
+
+    // Header pink border line
+    doc.setFillColor(219, 39, 119); // pink-600
+    doc.rect(0, 0, 210, 8, "F");
+
+    // Corporate Identity / Store Brand
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(22);
+    doc.setTextColor(219, 39, 119);
+    doc.text("SIDIVNIYAK BEAUTY & COSMETICS", 15, 25);
+
+    doc.setFont("Helvetica", "normal");
+    doc.setFontSize(9.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text("Cosmetics Retail Outlet, Mumbai, MH | GSTIN: 27SIDIV9802F1Z4", 15, 31);
+
+    // Separator line
+    doc.setDrawColor(226, 232, 240);
+    doc.line(15, 36, 195, 36);
+
+    // Invoice Meta / Entity Information
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(10.5);
+    doc.setTextColor(71, 85, 105);
+    doc.text("RETAIL MEMO TO:", 15, 47);
+
+    doc.setFont("Helvetica", "normal");
+    doc.setTextColor(15, 23, 42);
+    doc.setFontSize(10);
+    doc.text(`Customer Name : ${bill.customerName}`, 15, 53);
+    if (bill.customerPhone) {
+      doc.text(`Mobile Number : ${bill.customerPhone}`, 15, 59);
+    }
+    if (bill.customerGstin) {
+      doc.setFont("Helvetica", "bold");
+      doc.setTextColor(219, 39, 119);
+      doc.text(`Buyer GSTIN   : ${bill.customerGstin}`, 15, 65);
+      doc.setFont("Helvetica", "normal");
+      doc.setTextColor(15, 23, 42);
+    }
+
+    doc.setFont("Helvetica", "bold");
+    doc.setTextColor(71, 85, 105);
+    doc.text("TRANSACTION METRICS:", 130, 47);
+
+    doc.setFont("Helvetica", "normal");
+    doc.setTextColor(15, 23, 42);
+    doc.text(`Invoice No : #${bill.invoiceNumber}`, 130, 53);
+    doc.text(`Sale Date  : ${bill.saleDate}`, 130, 59);
+    doc.text(`Status     : ${bill.isCancelled ? "VOID/CANCELLED" : "SETTLED (CASH)"}`, 130, 65);
+
+    // Table Header
+    doc.setFillColor(248, 250, 252);
+    doc.rect(15, 75, 180, 9, "F");
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(9.5);
+    doc.setTextColor(71, 85, 105);
+    doc.text("ITEM PARTICULARS / SKU", 18, 81);
+    doc.text("QTY", 125, 81);
+    doc.text("RATE (INR)", 150, 81);
+    doc.text("TOTAL (INR)", 175, 81);
+
+    // Table Rows
+    let y = 91;
+    doc.setFont("Helvetica", "normal");
+    doc.setTextColor(15, 23, 42);
+    doc.setFontSize(9.5);
+
+    bill.items.forEach((item: any, idx: number) => {
+      // Alternate light pink shading for sleek zebra rows
+      if (idx % 2 === 1) {
+        doc.setFillColor(253, 244, 245);
+        doc.rect(15, y - 5, 180, 8, "F");
+      }
+      doc.text(`${item.name} (${item.sku})`, 18, y);
+      doc.text(`${item.quantity} PCS`, 125, y);
+      doc.text(`Rs.${parseFloat(item.rate).toFixed(2)}`, 150, y);
+      doc.text(`Rs.${parseFloat(item.total).toFixed(2)}`, 175, y);
+      y += 8;
+    });
+
+    // Summary calculation panel
+    y += 4;
+    doc.setDrawColor(226, 232, 240);
+    doc.line(15, y, 195, y);
+    y += 8;
+
+    doc.setFont("Helvetica", "normal");
+    doc.setTextColor(100, 116, 139);
+    doc.text("Subtotal Exclusive:", 115, y);
+    doc.setTextColor(15, 23, 42);
+    doc.text(`Rs.${parseFloat(bill.subtotal).toFixed(2)}`, 175, y);
+
+    y += 6;
+    doc.setTextColor(100, 116, 139);
+    doc.text("CGST Accrual (9%):", 115, y);
+    doc.setTextColor(15, 23, 42);
+    doc.text(`Rs.${parseFloat(bill.cgstTotal).toFixed(2)}`, 175, y);
+
+    y += 6;
+    doc.setTextColor(100, 116, 139);
+    doc.text("SGST Accrual (9%):", 115, y);
+    doc.setTextColor(15, 23, 42);
+    doc.text(`Rs.${parseFloat(bill.sgstTotal).toFixed(2)}`, 175, y);
+
+    if (bill.discount > 0) {
+      y += 6;
+      doc.setTextColor(239, 68, 68);
+      doc.text("Store Discounts Given:", 115, y);
+      doc.text(`-Rs.${parseFloat(bill.discount).toFixed(2)}`, 175, y);
+    }
+
+    y += 8;
+    doc.setFillColor(252, 231, 243); // Tailwind pink-100 shade
+    doc.rect(110, y - 5.5, 85, 9, "F");
+    doc.setFont("Helvetica", "bold");
+    doc.setTextColor(219, 39, 119); // Pink-600
+    doc.text("GRAND PAYABLE VALUE:", 115, Number(y.toFixed(0)));
+    doc.text(`Rs.${parseFloat(bill.grandTotal).toFixed(2)}`, 175, Number(y.toFixed(0)));
+
+    // Store disclaimer footer
+    y += 28;
+    doc.setFont("Helvetica", "italic");
+    doc.setFontSize(8.5);
+    doc.setTextColor(148, 163, 184);
+    doc.text("Thank you for shopping with us! This invoice is digitally managed in Sidivniyak Outward Ledger.", 15, y);
+
+    return doc;
+  };
+
+  const downloadPdf = (bill: any) => {
+    try {
+      const doc = generatePdf(bill);
+      doc.save(`Invoice_${bill.invoiceNumber}.pdf`);
+    } catch (err: any) {
+      console.error(err);
+      alert(`Unable to download PDF: ${err.message || err}`);
+    }
+  };
+
+  const sharePdf = async (bill: any) => {
+    try {
+      const doc = generatePdf(bill);
+      const blob = doc.output("blob");
+      const file = new File([blob], `Invoice_${bill.invoiceNumber}.pdf`, { type: "application/pdf" });
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: `Sidivniyak Memo #${bill.invoiceNumber}`,
+          text: `Retail Invoice #${bill.invoiceNumber} details for ${bill.customerName}.`
+        });
+      } else {
+        alert("Web Share API is not supported in this browser context. Downloading the PDF file directly.");
+        doc.save(`Invoice_${bill.invoiceNumber}.pdf`);
+      }
+    } catch (err: any) {
+      console.error(err);
+      alert(`Unable to share PDF: ${err.message || err}`);
+    }
+  };
+
+  const whatsappShare = (bill: any) => {
+    const textMsg = `*SIDIVNIYAK BEAUTY & COSMETICS*
+*RETAIL BILL MEMO:* #${bill.invoiceNumber}
+*Date:* ${bill.saleDate}
+*Customer:* ${bill.customerName}
+----------------------------------
+*Items Ordered:*
+${bill.items.map((it: any) => `- ${it.name} [Qty: ${it.quantity} @ ₹${it.rate}] = ₹${it.total}`).join("\n")}
+----------------------------------
+*Subtotal (Excl):* ₹${bill.subtotal}
+*CGST/SGST (18%):* ₹${Number(bill.cgstTotal + bill.sgstTotal).toFixed(2)}
+*Discounts:* -₹${bill.discount}
+*GRAND PAYABLE:* ₹${bill.grandTotal}
+
+_Thank you for your valuable patronage!_`;
+
+    const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(textMsg)}`;
+    window.open(url, "_blank");
+  };
+
+  const emailShare = (bill: any) => {
+    const subject = `Invoice ${bill.invoiceNumber} from Sidivniyak Beauty & Cosmetics`;
+    const emailBody = `SIDIVNIYAK BEAUTY & COSMETICS
+Mumbai, MH Region
+
+CASH MEMO INVOICE REF: #${bill.invoiceNumber}
+Date of Transaction: ${bill.saleDate}
+Purchased By: ${bill.customerName}
+${bill.customerPhone ? 'Phone Contact: ' + bill.customerPhone : ''}
+
+TRANSACTION BILLING SLIP:
+==================================
+${bill.items.map((it: any) => `${it.name} | Qty: ${it.quantity} | Rate: ₹${it.rate} | Total: ₹${it.total}`).join("\n")}
+==================================
+Subtotal Exclusive: ₹${bill.subtotal}
+Central GST (9%): ₹${bill.cgstTotal}
+State GST (9%): ₹${bill.sgstTotal}
+Discounts Applied: -₹${bill.discount}
+GRAND TOTAL REVENUE PAYABLE: ₹${bill.grandTotal}
+
+Thank you for shopping with us! Please find this record on your customer ledger.`;
+
+    const url = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(emailBody)}`;
+    window.open(url, "_blank");
+  };
+
+  const printInvoice = (bill: any) => {
+    try {
+      const iframeId = "print-invoice-iframe-render-manager";
+      let iframe = document.getElementById(iframeId) as HTMLIFrameElement;
+      if (iframe) iframe.remove();
+
+      iframe = document.createElement("iframe") as HTMLIFrameElement;
+      iframe.id = iframeId;
+      iframe.style.position = "absolute";
+      iframe.style.width = "0px";
+      iframe.style.height = "0px";
+      iframe.style.border = "none";
+      document.body.appendChild(iframe);
+
+      const doc = iframe.contentWindow?.document || iframe.contentDocument;
+      if (!doc) return;
+
+      const htmlContent = `
+        <html>
+          <head>
+            <title>Invoice #${bill.invoiceNumber}</title>
+            <style>
+              body {
+                font-family: 'Courier New', Courier, monospace;
+                color: #000;
+                background: #fff;
+                padding: 15px;
+                font-size: 11px;
+                line-height: 1.35;
+              }
+              .header {
+                text-align: center;
+                border-bottom: 2px dashed #000;
+                padding-bottom: 12px;
+                margin-bottom: 12px;
+              }
+              .title {
+                font-size: 15px;
+                font-weight: bold;
+                margin: 0;
+                letter-spacing: 0.5px;
+              }
+              .subtitle {
+                font-size: 9px;
+                margin: 3px 0 0 0;
+                text-transform: uppercase;
+              }
+              .details {
+                display: flex;
+                justify-content: space-between;
+                margin-bottom: 12px;
+                font-size: 10px;
+              }
+              table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-bottom: 12px;
+              }
+              th, td {
+                padding: 4px 0;
+                text-align: left;
+                font-size: 10px;
+              }
+              th {
+                border-bottom: 1px solid #000;
+                font-weight: bold;
+              }
+              .nowrap { whitespace: nowrap; }
+              .text-right { text-align: right; }
+              .summary {
+                border-top: 1px dashed #000;
+                padding-top: 8px;
+                text-align: right;
+                font-size: 10px;
+                margin-top: 8px;
+              }
+              .summary div {
+                margin-bottom: 2.5px;
+              }
+              .grand {
+                font-size: 13px;
+                font-weight: bold;
+                border-top: 1px solid #000;
+                padding-top: 4px;
+                margin-top: 4px;
+              }
+              .footer {
+                text-align: center;
+                margin-top: 25px;
+                font-size: 9px;
+                border-top: 1px dashed #000;
+                padding-top: 8px;
+              }
+              @media print {
+                body { padding: 0; margin: 0; }
+                @page { margin: 1cm; }
+              }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <div class="title">SIDIVNIYAK BEAUTY & COSMETICS</div>
+              <div class="subtitle">Cosmetics Retail Outlet, Mumbai, MH</div>
+              <div class="subtitle">GSTIN: 27SIDIV9802F1Z4 | Cash billingmemo</div>
+            </div>
+            
+            <div class="details">
+              <div>
+                <strong>CUSTOMER:</strong> ${bill.customerName}<br>
+                ${bill.customerPhone ? 'PH: ' + bill.customerPhone + '<br>' : ''}
+                ${bill.customerGstin ? 'GSTIN: ' + bill.customerGstin + '<br>' : ''}
+              </div>
+              <div class="text-right">
+                <strong>INVOICE:</strong> #${bill.invoiceNumber}<br>
+                <strong>DATE:</strong> ${bill.saleDate}
+              </div>
+            </div>
+
+            ${bill.isCancelled ? `
+              <div style="border: 1px solid #000; padding: 4px; text-align: center; font-weight: bold; margin-bottom: 12px;">
+                THIS TRANSACTION WAS CANCELLED / REVERSED
+              </div>
+            ` : ''}
+
+            <table>
+              <thead>
+                <tr>
+                  <th>ITEM DETAILS</th>
+                  <th class="text-right">QTY</th>
+                  <th class="text-right">RATE</th>
+                  <th class="text-right">TOTAL</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${bill.items.map((item: any) => `
+                  <tr>
+                    <td>${item.name}<br><small style="color:#666">SKU: ${item.sku}</small></td>
+                    <td class="text-right">${item.quantity} PCS</td>
+                    <td class="text-right">₹${parseFloat(item.rate).toFixed(2)}</td>
+                    <td class="text-right">₹${parseFloat(item.total).toFixed(2)}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+
+            <div class="summary">
+              <div>SUBTOTAL EXCLUSIVE: ₹${parseFloat(bill.subtotal).toFixed(2)}</div>
+              <div>CGST TAX ACCRUAL (9%): ₹${parseFloat(bill.cgstTotal).toFixed(2)}</div>
+              <div>SGST TAX ACCRUAL (9%): ₹${parseFloat(bill.sgstTotal).toFixed(2)}</div>
+              ${bill.discount > 0 ? `<div style="color:red">CASH DISCOUNTS: -₹${parseFloat(bill.discount).toFixed(2)}</div>` : ''}
+              <div class="grand text-right">GRAND REVENUE PAYABLE: ₹${parseFloat(bill.grandTotal).toFixed(2)}</div>
+            </div>
+
+            <div class="footer">
+              Thank you for shopping with us!<br>
+              Cash Memo Generated Offline via Sidivniyak Outward Ledger.
+            </div>
+
+            <script>
+              window.onload = function() {
+                window.focus();
+                window.print();
+              }
+            </script>
+          </body>
+        </html>
+      `;
+
+      doc.open();
+      doc.write(htmlContent);
+      doc.close();
+    } catch (err: any) {
+      console.error(err);
+      alert(`Print execution failed: ${err.message || err}`);
+    }
+  };
 
   // Computed values for current draft
   const draftSubtotal = saleItems.reduce((sum, si) => {
@@ -380,18 +772,51 @@ export const SalesManager: React.FC = () => {
             <div className="text-[10px] text-pink-600 font-black border-t border-slate-200 pt-1 uppercase">GRAND NET PAYABLE: ₹{activeInvoice.grandTotal}</div>
           </div>
 
-          <div className="flex gap-2">
+          {/* Export & Share Panel */}
+          <div className="border-t border-b border-slate-100 py-2 space-y-2">
+            <p className="text-[7.5px] text-slate-400 font-bold uppercase tracking-wider font-mono">EXPORT & SHARE OPTIONS</p>
+            <div className="grid grid-cols-2 gap-1.5">
+              <button
+                type="button"
+                onClick={() => downloadPdf(activeInvoice)}
+                className="py-1 px-2 mb-0.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 font-mono text-[7.5px] font-bold rounded cursor-pointer flex items-center justify-center gap-1 text-slate-800 transition select-none"
+              >
+                <Download className="h-2.5 w-2.5 text-pink-600 font-bold" /> DOWNLOAD PDF
+              </button>
+              <button
+                type="button"
+                onClick={() => sharePdf(activeInvoice)}
+                className="py-1 px-2 mb-0.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 font-mono text-[7.5px] font-bold rounded cursor-pointer flex items-center justify-center gap-1 text-slate-800 transition select-none"
+              >
+                <Share2 className="h-2.5 w-2.5 text-pink-600 font-bold" /> SHARE PDF FILE
+              </button>
+              <button
+                type="button"
+                onClick={() => whatsappShare(activeInvoice)}
+                className="py-1 px-2 mb-0.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 font-mono text-[7.5px] font-bold rounded cursor-pointer flex items-center justify-center gap-1 text-slate-800 transition select-none"
+              >
+                <Send className="h-2.5 w-2.5 text-emerald-600 font-bold" /> WHATSAPP SHARE
+              </button>
+              <button
+                type="button"
+                onClick={() => emailShare(activeInvoice)}
+                className="py-1 px-2 mb-0.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 font-mono text-[7.5px] font-bold rounded cursor-pointer flex items-center justify-center gap-1 text-slate-800 transition select-none"
+              >
+                <Mail className="h-2.5 w-2.5 text-sky-600 font-bold" /> EMAIL INVOICE
+              </button>
+            </div>
+          </div>
+
+          <div className="flex gap-2 text-[9px]">
             <button
-              onClick={() => {
-                alert("Triggering device hardware printer connection. Print success!");
-              }}
-              className="flex-1 py-1 bg-slate-950 hover:bg-slate-850 text-white font-mono text-[9px] font-bold rounded cursor-pointer flex items-center justify-center gap-1 shadow select-none"
+              onClick={() => printInvoice(activeInvoice)}
+              className="flex-1 py-1 bg-slate-950 hover:bg-slate-850 text-white font-mono font-bold rounded cursor-pointer flex items-center justify-center gap-1 shadow select-none"
             >
               <Printer className="h-3 w-3" /> PRINT BILL INVOICE
             </button>
             <button
               onClick={() => setActiveInvoice(null)}
-              className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 font-mono text-[9px] font-semibold rounded cursor-pointer transition"
+              className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 font-mono font-semibold rounded cursor-pointer transition"
             >
               [CLOSE]
             </button>

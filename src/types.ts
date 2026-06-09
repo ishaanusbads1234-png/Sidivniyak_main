@@ -130,6 +130,12 @@ export interface Purchase {
   gstAmount: number;
   grandTotal: number;
   operator: string;
+  // OCR Audit trail storage fields
+  originalImage?: string;
+  rawOcrText?: string;
+  ocrConfidence?: number;
+  importTimestamp?: string;
+  correctedFields?: string[];
 }
 
 export interface Supplier {

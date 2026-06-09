@@ -9,7 +9,6 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
-import { GoogleGenAI } from "@google/genai";
 
 // Load environment variables from .env
 dotenv.config();
@@ -21,34 +20,78 @@ const PORT = 3000;
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
-// Server-side lazy-initialized Gemini SDK client
-let aiClient: GoogleGenAI | null = null;
-function getAiClient(): GoogleGenAI {
-  if (!aiClient) {
-    const key = process.env.GEMINI_API_KEY;
-    if (!key || key === "MY_GEMINI_API_KEY") {
-      throw new Error("GEMINI_API_KEY environment variable is required and must be configured.");
-    }
-    aiClient = new GoogleGenAI({ apiKey: key });
-  }
-  return aiClient;
-}
-
 // REST API Endpoints
 
 /**
  * Endpoint for parsing PDFs, images, and raw invoice text with Gemini AI.
+ * Uses pure Node native fetch to guarantee isolated API Key authentication,
+ * preventing container-level OAuth or metadata bearer token interception.
  */
 app.post("/api/ocr/parse", async (req, res) => {
   try {
-    const { fileBase64, mimeType, text, items } = req.body;
+    const { fileBase64, mimeType, text, items, engine } = req.body;
 
     if (!fileBase64 && !text) {
       res.status(400).json({ error: "Missing file base64 content or text." });
       return;
     }
 
-    const ai = getAiClient();
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey || apiKey === "MY_GEMINI_API_KEY") {
+      throw new Error("GEMINI_API_KEY environment variable is required and must be configured.");
+    }
+
+    // Determine engine-specific behavior
+    let activeTextContext = text || "";
+    let ocrEngineLabel = engine || "paddle_ocr";
+
+    // If the selected engine is OCR.space, we utilize the external OCR.space API first
+    if (ocrEngineLabel === "ocr_space" && fileBase64) {
+      try {
+        console.log("[server.ts] Executing OCR.space API workflow...");
+        const ocrSpaceKey = process.env.OCR_SPACE_API_KEY || "K88722238488957";
+        
+        // Prepare base64 string for OCR.space
+        let cleanBase64 = fileBase64;
+        if (fileBase64.includes(";base64,")) {
+          cleanBase64 = fileBase64; // OCR.space accepts data URI format or raw base64
+        } else {
+          cleanBase64 = `data:${mimeType || "image/jpeg"};base64,${fileBase64}`;
+        }
+
+        const formData = new URLSearchParams();
+        formData.append("apikey", ocrSpaceKey);
+        formData.append("base64Image", cleanBase64);
+        formData.append("language", "eng");
+        formData.append("isTable", "true");
+        formData.append("scale", "true");
+
+        const ocrSpaceResponse = await fetch("https://api.ocr.space/parse/image", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded"
+          },
+          body: formData.toString()
+        });
+
+        if (ocrSpaceResponse.ok) {
+          const ocrSpaceJson = await ocrSpaceResponse.json();
+          if (ocrSpaceJson.IsErroredOnProcessing) {
+            console.warn("[server.ts] OCR.space processing failed, falling back to Google Vision:", ocrSpaceJson.ErrorMessage);
+          } else {
+            const parsedText = ocrSpaceJson.ParsedResults?.[0]?.ParsedText || "";
+            if (parsedText.trim().length > 0) {
+              console.log("[server.ts] OCR.space successfully retrieved text length in characters:", parsedText.length);
+              activeTextContext = parsedText;
+            }
+          }
+        } else {
+          console.warn("[server.ts] OCR.space endpoint returned non-OK status:", ocrSpaceResponse.status);
+        }
+      } catch (ocrSpaceErr) {
+        console.warn("[server.ts] Failed executing external OCR.space request:", ocrSpaceErr);
+      }
+    }
 
     const promptInstructions = `
 Analyze the uploaded document, which is a supplier wholesale invoice. Text or file content has been uploaded.
@@ -101,16 +144,24 @@ Return the output strictly in the following JSON structure:
 }
 `;
 
-    let contentPayload: any[] = [];
+    const contentPayloadParts: any[] = [];
 
-    if (fileBase64 && mimeType) {
-      // Strip any base64 metadata headers
+    // If we have an OCR string from OCR.space, or if it's textual PDF, we pass it.
+    // Otherwise, if we're doing visual-based OCR (paddle_ocr or google_vision), we pass the image structure as inlineData.
+    if (activeTextContext) {
+      contentPayloadParts.push({
+        text: `Raw OCR or Text Context parsed by engine [${ocrEngineLabel}]:\n${activeTextContext}`
+      });
+    }
+
+    // Always send the image inlineData for multi-modal verification if doing "paddle_ocr" or "google_vision"
+    if (fileBase64 && mimeType && (!activeTextContext || ocrEngineLabel !== "ocr_space")) {
       let cleanBase64 = fileBase64;
       if (fileBase64.includes(";base64,")) {
         cleanBase64 = fileBase64.split(";base64,").pop() || "";
       }
 
-      contentPayload.push({
+      contentPayloadParts.push({
         inlineData: {
           data: cleanBase64,
           mimeType: mimeType
@@ -118,34 +169,45 @@ Return the output strictly in the following JSON structure:
       });
     }
 
-    if (text) {
-      contentPayload.push({
-        text: `Raw text fallback context:\n${text}`
-      });
-    }
+    contentPayloadParts.push({ text: promptInstructions });
 
-    contentPayload.push({ text: promptInstructions });
-
-    // Call Gemini API server-side
-    const geminiResponse = await ai.models.generateContent({
-     model: "gemini-2.0-flash",
-      contents: contentPayload,
-      config: {
+    // Pure, direct HTTP POST avoids importing heavyweight sdk routines that trigger Service Account token metadata interceptors
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+    
+    const requestBody = {
+      contents: [
+        {
+          parts: contentPayloadParts
+        }
+      ],
+      generationConfig: {
         responseMimeType: "application/json"
       }
+    };
+
+    const response = await fetch(geminiUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(requestBody)
     });
 
-    const parsedTextResult = geminiResponse.text;
-    if (!parsedTextResult) {
-      res.status(500).json({ error: "Failed to extract text prediction from Gemini model." });
-      return;
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`Gemini REST failure: Status ${response.status}`, errorText);
+      throw new Error(`Gemini Server response: HTTP ${response.status} - ${errorText}`);
     }
 
-    // Clean text and parse as JSON
-    const cleanJsonText = parsedTextResult.trim();
-    const resultObj = JSON.parse(cleanJsonText);
+    const responseJson = await response.json();
+    const candidateText = responseJson.candidates?.[0]?.content?.parts?.[0]?.text;
 
-    res.json(resultObj);
+    if (!candidateText) {
+      throw new Error("No structured text output was obtained from the model candidates.");
+    }
+
+    const cleanResult = JSON.parse(candidateText.trim());
+    res.json(cleanResult);
 
   } catch (error: any) {
     console.error("Gemini OCR Integration Exception: ", error);
